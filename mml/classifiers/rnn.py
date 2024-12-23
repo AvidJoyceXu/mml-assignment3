@@ -148,7 +148,43 @@ class CaptioningRNN:
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        # (1) Compute the initial hidden state from the image features
+        h0 = np.dot(features, W_proj) + b_proj
+
+        # (2) Transform the words in captions_in from indices to vectors
+        (out, cache_embedding) = word_embedding_forward(captions_in, W_embed)
+
+        # (3) Process the sequence of input word vectors
+        if self.cell_type == "rnn":
+            h, cache = rnn_forward(out, h0, Wx, Wh, b) # h: [N, T, H]
+        elif self.cell_type == "lstm":
+            h, cache = lstm_forward(out, h0, Wx, Wh, b)
+
+        # (4) Compute scores over the vocabulary
+        scores, cache_scores = temporal_affine_forward(h, W_vocab, b_vocab)
+
+        # (5) Compute loss using captions_out and mask
+        loss, dscores = temporal_softmax_loss(scores, captions_out, mask)
+
+        # Backward pass
+        dh, dW_vocab, db_vocab = temporal_affine_backward(dscores, cache_scores)
+        if self.cell_type == "rnn":
+            dx, dh0, dWx, dWh, db = rnn_backward(dh, cache)
+        elif self.cell_type == "lstm":
+            dx, dh0, dWx, dWh, db = lstm_backward(dh, cache)
+        dW_embed = word_embedding_backward(dx, cache_embedding)
+        dW_proj = np.dot(features.T, dh0)
+        db_proj = np.sum(dh0, axis=0)
+
+        # Store gradients
+        grads["W_proj"] = dW_proj
+        grads["b_proj"] = db_proj
+        grads["W_embed"] = dW_embed
+        grads["Wx"] = dWx
+        grads["Wh"] = dWh
+        grads["b"] = db
+        grads["W_vocab"] = dW_vocab
+        grads["b_vocab"] = db_vocab
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -216,7 +252,35 @@ class CaptioningRNN:
         ###########################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        # Initialize the hidden state from the image features
+        h = np.dot(features, W_proj) + b_proj
+
+        # Initialize the cell state to zeros if using LSTM
+        if self.cell_type == "lstm":
+            c = np.zeros_like(h)
+
+        # The first word input is the <START> token
+        word = np.full((N,), self._start, dtype=np.int32)
+
+        for t in range(max_length):
+            # Embed the previous word
+            word_embed, _ = word_embedding_forward(word, W_embed)
+
+            # Make an RNN step
+            if self.cell_type == "rnn":
+              h, _ = rnn_step_forward(word_embed, h, Wx, Wh, b)
+            elif self.cell_type == "lstm":
+              h, c, _ = lstm_step_forward(word_embed, h, c, Wx, Wh, b)
+
+            # Compute scores for all words in the vocabulary
+            scores, _ = temporal_affine_forward(h[:, np.newaxis, :], W_vocab, b_vocab)
+            scores = scores[:, 0, :]
+
+            # Select the word with the highest score
+            word = np.argmax(scores, axis=1)
+
+            # Store the word in the captions array
+            captions[:, t] = word
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
