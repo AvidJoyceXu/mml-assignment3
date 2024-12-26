@@ -2,3 +2,7 @@
 *.pyc
 .vscode
 mml/datasets/*
+mml/data/coco/*
+wandb/*
+weights/*
+https:/hf-mirror.com/*

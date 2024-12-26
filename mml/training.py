@@ -4,6 +4,8 @@
 
 import argparse
 import os
+import sys
+sys.path.append(os.path.abspath("."))
 import random
 
 import numpy as np
@@ -33,7 +35,7 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-config = ConfigL() if args.size.upper() else ConfigS()
+config = ConfigL() if args.size.upper() == 'L' else ConfigS()
 
 # set seed
 random.seed(config.seed)
@@ -47,7 +49,8 @@ if __name__ == "__main__":
     device = torch.device("cuda" if is_cuda else "cpu")
 
     # TODO: 需要你自己实现一个ImageCaptionDataset在`data/dataset.py`中
-    dataset = ImageCaptionDataset()
+    dataset = ImageCaptionDataset(img_emb_dir="./mml/data/coco/hf_clip_features",
+                              caption_path="mml/data/coco/annotations/train_caption.json")
 
     config.train_size = int(config.train_size * len(dataset))
     config.val_size = int(config.val_size * len(dataset))
@@ -102,7 +105,7 @@ if __name__ == "__main__":
         train_loader=train_loader,
         valid_loader=valid_loader,
         test_dataset=test_dataset,
-        test_path=os.path.join("data", "raw"), # TODO: 请你修改这里为你自己的目录
+        test_path="./mml/data/coco/annotations/train2014", # TODO: 请你修改这里为你自己的目录
         ckp_path=ckp_path,
         device=device,
     )
@@ -111,6 +114,8 @@ if __name__ == "__main__":
     wandb.init(project="captioner", config=config.__dict__)
     wandb.watch(trainer.model, log="all")
     for epoch in range(trainer.epoch, config.epochs):
+        print("debug test_step")
+
         trainer.train_epoch()
         trainer.valid_epoch()
         trainer.test_step()

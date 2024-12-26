@@ -38,6 +38,7 @@ class Mapping(nn.Module):
         num_layers,
         embed_size,
         n_heads,
+        output_size,
         forward_expansion,
         dropout,
         device="cpu",
@@ -46,7 +47,7 @@ class Mapping(nn.Module):
 
         self.ep_len = ep_len
         self.embed_size = embed_size
-
+        self.output_size = output_size
         self.device = device
         
         self.transformer_encoder = nn.TransformerEncoder(
@@ -61,7 +62,7 @@ class Mapping(nn.Module):
             num_layers=num_layers,
         ).to(self.device)
 
-        self.mapper = nn.Linear(embed_size, ep_len * embed_size).to(self.device)
+        self.mapper = nn.Linear(embed_size, ep_len * output_size).to(self.device)
 
         self.init_weights()
 
@@ -71,9 +72,9 @@ class Mapping(nn.Module):
 
         x = x.view(
             *(
-                [-1, self.ep_len, self.embed_size]
+                [-1, self.ep_len, self.output_size]
                 if train_mode
-                else [self.ep_len, self.embed_size]
+                else [self.ep_len, self.output_size]
             )
         )  # for batched input
 
@@ -146,16 +147,17 @@ class Net(nn.Module):
         self.ep_len = ep_len
 
         self.ie = ImageEncoder(model=clip_model, device=device)
+        self.td = TextDecoder(model=text_model, device=device)
         self.mp = Mapping(
             ep_len=self.ep_len,
             num_layers=num_layers,
             embed_size=self.ie.model.config.hidden_size,
             n_heads=n_heads,
+            output_size = self.td.model.config.n_embd,
             forward_expansion=forward_expansion,
             dropout=dropout,
             device=device,
         )
-        self.td = TextDecoder(model=text_model, device=device)
 
         assert (
             self.ie.model.config.hidden_size == self.td.model.config.n_embd
@@ -247,13 +249,15 @@ class Net(nn.Module):
         # method should get embedded by CLIP images and trg_text without last token.
         # dataset should contain image, embedded image, text
 
-        x, x_mask = trg_cap[:, :-1], att_mask[:, :-1]
+        # NOTE: trg_cap: target caption **tokens**
+        x, x_mask = trg_cap[:, :-1], att_mask[:, :-1] # NOTE: auto-regressive
         y = trg_cap[:, 1:]
 
-        img_mapped = self.mp(img_emb, train_mode=True)
+        # print("Shape of img emb in Net train_forward:", img_emb.shape)
+        img_mapped = self.mp(img_emb, train_mode=True) # NOTE: Image mapping
 
         # embed all texts and con cat with map sos
-        text_emb = self.td.model.transformer.wte(x)
+        text_emb = self.td.model.transformer.wte(x) # NOTE: word token embedding
 
         # N, len, embed_size
         x = torch.concat([img_mapped, text_emb], dim=1)
@@ -261,7 +265,7 @@ class Net(nn.Module):
             [torch.ones(x_mask.shape[0], self.ep_len).to(self.device), x_mask], dim=1
         )
 
-        pos_emb = self.td.model.transformer.wpe(
+        pos_emb = self.td.model.transformer.wpe( # NOTE: word position embedding
             torch.arange(x.shape[1]).to(self.td.device)
         )
         pos_emb = pos_emb.expand_as(x)

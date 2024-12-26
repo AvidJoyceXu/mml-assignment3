@@ -68,7 +68,24 @@ class Trainer:
         loop.set_description(f"Epoch: {self.epoch} | Loss: ---")
         for batch_idx, (img_emb, cap, att_mask) in enumerate(loop):
             # TODO: 请你实现一个 training loop
-            pass
+            img_emb, cap, att_mask = (
+                img_emb.to(self.device),
+                cap.to(self.device),
+                att_mask.to(self.device),
+            )
+
+            self.optimizer.zero_grad()
+
+            with torch.cuda.amp.autocast():
+                loss = self.model.train_forward(
+                    img_emb=img_emb, trg_cap=cap, att_mask=att_mask
+                )
+
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+
+            total_loss += loss.item()
         
             loop.set_description(
                 f"Epoch: {self.epoch} | Loss: {total_loss / (batch_idx + 1):.3f}"
