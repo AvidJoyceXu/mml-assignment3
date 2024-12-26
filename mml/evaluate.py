@@ -1,9 +1,11 @@
 """
     Script to evaluate the model on the whole test set and save the results in folder.
 """
+import os
+import sys
+sys.path.append(os.path.abspath("."))
 
 import argparse
-import os
 import random
 
 import numpy as np
@@ -16,7 +18,7 @@ from tqdm import tqdm
 
 from mml.data import ImageCaptionDataset
 from mml.model import Net
-from mml.utils import ConfigS, ConfigL, download_weights
+from mml.utils import ConfigS, ConfigL
 
 parser = argparse.ArgumentParser()
 
@@ -50,6 +52,7 @@ args = parser.parse_args()
 config = ConfigL() if args.size.upper() == "L" else ConfigS()
 
 ckp_path = os.path.join(config.weights_dir, args.checkpoint_name)
+print("checkpoint path: ",ckp_path)
 
 assert os.path.exists(args.img_path), "Path to the test image folder does not exist"
 
@@ -106,7 +109,8 @@ if __name__ == "__main__":
         device=device,
     )
     # TODO: 需要你自己实现一个ImageCaptionDataset在`data/dataset.py`中
-    dataset = ImageCaptionDataset()
+    dataset = ImageCaptionDataset(img_emb_dir="mml/data/coco/hf_clip_features",
+                              caption_path="mml/data/coco/annotations/train_caption.json")
 
     config.train_size = int(config.train_size * len(dataset))
     config.val_size = int(config.val_size * len(dataset))
@@ -119,11 +123,11 @@ if __name__ == "__main__":
     if not os.path.exists(config.weights_dir):
         os.makedirs(config.weights_dir)
 
-    if not os.path.isfile(ckp_path):
-        download_weights(ckp_path, args.size)
+    # if not os.path.isfile(ckp_path):
+    #    download_weights(ckp_path, args.size)
 
     checkpoint = torch.load(ckp_path, map_location=device)
-    model.load_state_dict(checkpoint)
+    model.load_state_dict(checkpoint["model_state_dict"])
 
     save_path = os.path.join(
         args.res_path, f"{args.checkpoint_name[:-3]}_{args.size.upper()}"
