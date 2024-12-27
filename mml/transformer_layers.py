@@ -73,7 +73,8 @@ class PositionalEncoding(nn.Module):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        output = x + self.pe[:, :S, :].to(x.device)
+        x = x + self.pe[:, :S, :].to(x.device)
+        output = self.dropout(x)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
