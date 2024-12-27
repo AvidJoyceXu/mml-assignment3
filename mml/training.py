@@ -16,7 +16,7 @@ from torch.utils.data import random_split
 import wandb
 from mml.data import ImageCaptionDataset, get_loader
 from mml.model import Net, Trainer
-from mml.utils import ConfigS, ConfigL, LRWarmup
+from mml.utils import ConfigS, ConfigL, LRWarmup, ConfigQwen
 
 parser = argparse.ArgumentParser()
 
@@ -33,9 +33,18 @@ parser.add_argument(
     choices=["S", "L", "s", "l"],
 )
 
+parser.add_argument(
+    "-N",
+    "--name",
+    type=str,
+    default="qwen",
+    help="Word tokenizer for captioning",
+)
+
 args = parser.parse_args()
 
-config = ConfigL() if args.size.upper() == 'L' else ConfigS()
+# config = ConfigL() if args.size.upper() == 'L' else ConfigS()
+config = ConfigQwen()
 
 # set seed
 random.seed(config.seed)
@@ -66,6 +75,7 @@ if __name__ == "__main__":
         shuffle=True,
         num_workers=config.num_workers if is_cuda else 0,
         pin_memory=is_cuda,
+        name=args.name,
     )
 
     valid_loader = get_loader(
@@ -74,6 +84,7 @@ if __name__ == "__main__":
         shuffle=False,
         num_workers=config.num_workers if is_cuda else 0,
         pin_memory=is_cuda,
+        name=args.name
     )
 
     model = Net(
@@ -114,7 +125,11 @@ if __name__ == "__main__":
     wandb.init(project="captioner", config=config.__dict__)
     wandb.watch(trainer.model, log="all")
     for epoch in range(trainer.epoch, config.epochs):
-        print("debug test_step")
+        # print("debug test_step")
+        # trainer.test_step()
+
+        # debug
+        # trainer.save_ckp(os.path.join(config.weights_dir, f"epoch_{epoch + 1}.pt"))
 
         trainer.train_epoch()
         trainer.valid_epoch()

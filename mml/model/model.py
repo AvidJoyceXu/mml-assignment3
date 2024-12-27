@@ -4,7 +4,8 @@
 import torch
 import torch.nn as nn
 from transformers import CLIPModel, CLIPProcessor, GPT2LMHeadModel, GPT2Tokenizer
-
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import numpy as np
 
 class ImageEncoder(nn.Module):
     """
@@ -100,18 +101,31 @@ class TextDecoder(nn.Module):
         super(TextDecoder, self).__init__()
 
         self.device = device
+        self.name = model
 
-        self.tokenizer = GPT2Tokenizer.from_pretrained(model)
+        if "gpt" in model:
+            self.tokenizer = GPT2Tokenizer.from_pretrained(model)
+            self.model = GPT2LMHeadModel.from_pretrained(model).to(self.device)
+        elif "qwen" in model:
+            self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B")
+            self.model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-0.5B").to(self.device)
+            
+        self.vocab_size = self.model.config.vocab_size
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        self.model = GPT2LMHeadModel.from_pretrained(model).to(self.device)
-        self.vocab_size = self.model.config.vocab_size
-
     def forward(self, embedding, attention_mask=None):
+        squeeze_flag = False
+        if  embedding.dim() == 2: # NOTE: Qwen imposes the batchsize dimension
+            embedding = embedding.unsqueeze(0)
+            squeeze_flag = True
+
         text_features = self.model(
             inputs_embeds=embedding, attention_mask=attention_mask
         )
 
+        if squeeze_flag:
+            text_features.logits = text_features.logits.squeeze(0)
+            
         return text_features.logits
 
 
@@ -143,25 +157,32 @@ class Net(nn.Module):
         """
         super(Net, self).__init__()
 
+        self.text_model = text_model
+
         self.device = device
         self.ep_len = ep_len
 
         self.ie = ImageEncoder(model=clip_model, device=device)
         self.td = TextDecoder(model=text_model, device=device)
+
+        output_size = self.td.model.config.n_embd if "gpt" in text_model else self.td.model.config.hidden_size
+        # print(self.td.model.config) # check Qwen Config
+        
         self.mp = Mapping(
             ep_len=self.ep_len,
             num_layers=num_layers,
             embed_size=self.ie.model.config.hidden_size,
             n_heads=n_heads,
-            output_size = self.td.model.config.n_embd,
+            output_size = output_size,
             forward_expansion=forward_expansion,
             dropout=dropout,
             device=device,
         )
 
-        assert (
-            self.ie.model.config.hidden_size == self.td.model.config.n_embd
-        ), "Embedding size of models mismatch"
+        if "gpt" in text_model:
+            assert (
+                self.ie.model.config.hidden_size == self.td.model.config.n_embd
+            ), "Embedding size of models mismatch"
 
         self.max_len = max_len
 
@@ -171,11 +192,20 @@ class Net(nn.Module):
         self.freeze_layers()
 
     def freeze_layers(self):
-        for p in [
-            *list(self.ie.parameters()),
-            *list(self.td.parameters())[14:-14],
-        ]:  # freeze everything, except 1st and last transformer layer in Decoder
-            p.requires_grad = False
+        print(f"Freeze model parameters for {self.text_model}")
+        if "gpt" in self.text_model:
+            for p in [
+                *list(self.ie.parameters()),
+                *list(self.td.parameters())[14:-14],
+            ]:  # freeze everything, except 1st and last transformer layer in Decoder
+                p.requires_grad = False
+        elif "qwen" in self.text_model:
+            for p in [
+                *list(self.ie.parameters()),
+                *list(self.td.parameters())[13:-13], 
+                # freeze everything, except 1st and last transformer layer in Decoder
+            ]:
+                p.requires_grad = False
 
     def forward(self, img, temperature=1.0):
         """
@@ -197,9 +227,19 @@ class Net(nn.Module):
             # (ep_len, embed_size)
             img_mapped = self.mp(img_embedded)
 
-            sos_emb = self.td.model.transformer.wte(
-                torch.tensor(self.td.tokenizer.bos_token_id).to(self.device)
-            )
+            if "gpt" in self.text_model:
+                sos_emb = self.td.model.transformer.wte( # NOTE: calculate the embedding for the Start-Of-Sequence token
+                    torch.tensor(self.td.tokenizer.bos_token_id).to(self.device)
+                )
+            elif "qwen" in self.text_model: # Qwen tokenizer
+                # print(self.td.tokenizer)
+                # import sys
+                # sys.exit(0)
+                sos_emb = self.td.model.model.embed_tokens( # NOTE: `print(model)`` to get the layer-wise architecture
+                    torch.tensor(self.td.tokenizer.eos_token_id).to(self.device)
+                )
+            else:
+                raise ValueError(f"Unknown text model {self.text_model}")
 
             # sos_emb shape embed_size -> (1, embed_size)
             sos_emb = sos_emb.unsqueeze(0)
@@ -207,23 +247,30 @@ class Net(nn.Module):
             # (ep_len + 1, embed_size)
             start_emb = torch.cat([sos_emb, img_mapped], dim=0)
 
-            tokens = []
+            tokens = [] # NOTE: the predicted tokens
             for _ in range(self.max_len):
                 if len(tokens):
-                    tok_emb = self.td.model.transformer.wte(
-                        torch.tensor(tokens).to(self.device)
-                    )
+                    if "gpt" in self.text_model:
+                        tok_emb = self.td.model.transformer.wte(
+                            torch.tensor(tokens).to(self.device)
+                        )
+                    elif "qwen" in self.text_model:
+                        tok_emb = self.td.model.model.embed_tokens(
+                            torch.tensor(tokens).to(self.device)
+                        )
 
                     emb = torch.cat([start_emb, tok_emb], dim=0)
                 else:
                     emb = start_emb
 
                 # add positional enc
-                pos_emb = self.td.model.transformer.wpe(
-                    torch.arange(emb.shape[0]).to(self.device)
-                )
-
-                emb += pos_emb
+                if "gpt" in self.text_model:
+                    pos_emb = self.td.model.transformer.wpe(
+                        torch.arange(emb.shape[0]).to(self.device)
+                    )
+                    emb += pos_emb
+                # NOTE: Qwen doesn't appear to have explicit position embeddings
+                
                 pred = self.td(emb)
 
                 pred = torch.softmax(pred / temperature, dim=-1)
@@ -257,7 +304,11 @@ class Net(nn.Module):
         img_mapped = self.mp(img_emb, train_mode=True) # NOTE: Image mapping
 
         # embed all texts and con cat with map sos
-        text_emb = self.td.model.transformer.wte(x) # NOTE: word token embedding
+        if "gpt" in self.text_model:
+            text_emb = self.td.model.transformer.wte(x) # NOTE: word token embedding
+        elif "qwen" in self.text_model:
+            # print(self.td.model.model.device)
+            text_emb = self.td.model.model.embed_tokens(x)
 
         # N, len, embed_size
         x = torch.concat([img_mapped, text_emb], dim=1)
@@ -265,12 +316,12 @@ class Net(nn.Module):
             [torch.ones(x_mask.shape[0], self.ep_len).to(self.device), x_mask], dim=1
         )
 
-        pos_emb = self.td.model.transformer.wpe( # NOTE: word position embedding
-            torch.arange(x.shape[1]).to(self.td.device)
-        )
-        pos_emb = pos_emb.expand_as(x)
-
-        x += pos_emb
+        if "gpt" in self.text_model:
+            pos_emb = self.td.model.transformer.wpe( # NOTE: word position embedding
+                torch.arange(x.shape[1]).to(self.td.device)
+            )
+            pos_emb = pos_emb.expand_as(x)
+            x += pos_emb
 
         res = self.td(x, attention_mask=x_mask)
         # res = torch.softmax(res, dim=2) # double softmax for ce_loss
@@ -284,8 +335,9 @@ class Net(nn.Module):
 
 if __name__ == "__main__":
     for clip, text in [
+        # ["openai/clip-vit-base-patch32", "qwen"],
         ["openai/clip-vit-base-patch32", "gpt2"],
-        ["openai/clip-vit-large-patch14", "gpt2-medium"],
+        # ["openai/clip-vit-large-patch14", "gpt2-medium"],
     ]:
         m = Net(
             clip_model=clip,
@@ -299,12 +351,22 @@ if __name__ == "__main__":
         )
 
         m.eval()
-        r = m(torch.randn(3, 224, 224))
+        r = m(torch.tensor(np.random.rand(3, 224, 224), dtype=torch.float32))
+        # r = m(torch.randn(3, 224, 224))
         print(r)
 
         m.train()
+
+        for name, param in m.named_parameters():
+            print(f"{name}: {'Frozen' if not param.requires_grad else 'Trainable'}")
+        import sys
+        sys.exit(6)
+        
         N = 10
-        emb = m.td.model.config.n_embd
+        if "gpt" in text:
+            emb = m.td.model.config.n_embd
+        elif "qwen" in text:
+            emb = m.td.model.config.hidden_size
         length = 20
 
         l = m.train_forward(

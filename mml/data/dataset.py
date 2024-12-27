@@ -78,9 +78,14 @@ def cl_fn(batch, tokenizer):
 
     return img_embs, input_ids, attention_mask
 
-
-def get_loader(dataset, bs_exp=5, shuffle=True, num_workers=0, pin_memory=False):
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+from transformers import AutoTokenizer
+def get_loader(dataset, bs_exp=5, shuffle=True, num_workers=0, pin_memory=False, name="gpt2"):
+    # tokenizer = GPT2Tokenizer.from_pretrained(name)
+    print("Tokenizer name in dataloader: ", name)
+    if "gpt" in name:
+        tokenizer = AutoTokenizer.from_pretrained(name)
+    elif "qwen" in name:
+        tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B")
     tokenizer.pad_token = tokenizer.eos_token
 
     return DataLoader(

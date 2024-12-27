@@ -140,7 +140,7 @@ class Trainer:
             img = Image.open(os.path.join(self.test_path, img_name))
 
             with torch.no_grad():
-                caption, _ = self.model(img)
+                caption, _ = self.model(img) # call the `forward` function (instead of the `train_forward`)
 
             axs[idx // 2, idx % 2].imshow(img)
             axs[idx // 2, idx % 2].set_title(caption)
