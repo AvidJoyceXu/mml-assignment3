@@ -40,8 +40,8 @@ class PositionalEncoding(nn.Module):
 
         pos = torch.arange(0, max_len).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, embed_dim, 2) * -(math.log(10000.0) / embed_dim))
-        pe[0, :, 0::2] = torch.sin(pos * div_term)
-        pe[0, :, 1::2] = torch.cos(pos * div_term)
+        pe[:, :, 0::2] = torch.sin(pos * div_term)
+        pe[:, :, 1::2] = torch.cos(pos * div_term)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
