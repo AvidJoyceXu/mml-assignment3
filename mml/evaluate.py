@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 from mml.data import ImageCaptionDataset
 from mml.model import Net
-from mml.utils import ConfigS, ConfigL
+from mml.utils import ConfigS, ConfigL, ConfigQwen
 
 parser = argparse.ArgumentParser()
 
@@ -32,7 +32,7 @@ parser.add_argument(
     type=str,
     default="S",
     help="Model size [S, L]",
-    choices=["S", "L", "s", "l"],
+    # choices=["S", "L", "s", "l"],
 )
 
 parser.add_argument(
@@ -50,6 +50,9 @@ parser.add_argument(
 args = parser.parse_args()
 
 config = ConfigL() if args.size.upper() == "L" else ConfigS()
+
+if args.size == "qwen":
+    config = ConfigQwen()
 
 ckp_path = os.path.join(config.weights_dir, args.checkpoint_name)
 print("checkpoint path: ",ckp_path)
