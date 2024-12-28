@@ -1,0 +1,1 @@
+python mml/training.py --size s --checkpoint-name test

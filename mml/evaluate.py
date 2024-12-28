@@ -130,7 +130,13 @@ if __name__ == "__main__":
     #    download_weights(ckp_path, args.size)
 
     checkpoint = torch.load(ckp_path, map_location=device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+
+    if "filtered" in args.checkpoint_name:
+        print("Loading filtered model!")
+        model.load_state_dict(checkpoint, strict=False)
+    else:
+        print("Loading full model!")
+        model.load_state_dict(checkpoint["model_state_dict"], strict=False)
 
     save_path = os.path.join(
         args.res_path, f"{args.checkpoint_name[:-3]}_{args.size.upper()}"

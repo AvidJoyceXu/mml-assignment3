@@ -1,0 +1,1 @@
+python mml/evaluate.py --size qwen --checkpoint-name filtered_epoch_6.pt --img-path mml/data/coco/annotations/train2014

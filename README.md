@@ -1,5 +1,43 @@
 # 多模态学习2024年第三次作业
 
+## [NEW]复现方式
+### env
+- 3.1: requirements.txt
+
+- 3.2B(gpt2): mml/requirements.txt
+
+- 3.2B(qwen): qwen_requirements.txt
+
+### Train for 3.2B
+```bash
+chmod +x scripts/
+
+conda activate gpt2
+./scripts/train_gpt2.sh
+
+conda activate qwen
+./scripts/train_qwen.sh
+```
+
+### Evaluate for 3.2B
+- download weights from [Baidu Drive](https://pan.baidu.com/s/1-D40lOWj8yuvI9p5I3KysA?pwd=abcd) with pwd=abcd
+
+- structure the `weights` directory as follows, or change the `config` object and `checkpoint-name` argument in `scripts/eval*.sh` accordingly
+```bash
+weights/
+├── qwen
+│   └── filtered_epoch_6.pt # qwen ckpt with epoch=6
+├── small
+    └── filtered_epoch_18.pt # gpt2 ckpt with epoch=18
+```
+```bash
+conda activate gpt2
+./scripts/eval_gpt2.sh
+
+conda activate qwen
+./scripts/eval_qwen.sh
+```
+
 ## 主题
 使用RNN/LSTM/Transformer实现Image Caption模型 
 

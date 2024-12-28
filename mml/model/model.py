@@ -102,13 +102,14 @@ class TextDecoder(nn.Module):
 
         self.device = device
         self.name = model
-
+        print(f"The text model is {model}")
+        
         if "gpt" in model:
             self.tokenizer = GPT2Tokenizer.from_pretrained(model)
-            self.model = GPT2LMHeadModel.from_pretrained(model).to(self.device)
+            self.model = GPT2LMHeadModel.from_pretrained(model).to(self.device) # The GPT2LMHeadModel is different from the AutoModelForCausalLM implementation.
         elif "qwen" in model:
-            self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B")
-            self.model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-0.5B").to(self.device)
+            self.tokenizer = AutoTokenizer.from_pretrained(model)
+            self.model = AutoModelForCausalLM.from_pretrained(model).to(self.device)
             
         self.vocab_size = self.model.config.vocab_size
         self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -199,13 +200,16 @@ class Net(nn.Module):
                 *list(self.td.parameters())[14:-14],
             ]:  # freeze everything, except 1st and last transformer layer in Decoder
                 p.requires_grad = False
-        elif "qwen" in self.text_model:
+        elif "qwen" in self.text_model.lower():
             for p in [
                 *list(self.ie.parameters()),
                 *list(self.td.parameters())[13:-13], 
                 # freeze everything, except 1st and last transformer layer in Decoder
             ]:
                 p.requires_grad = False
+
+        else:
+            raise ValueError(f"Unknown text model {self.text_model}")
 
     def forward(self, img, temperature=1.0):
         """
@@ -231,10 +235,7 @@ class Net(nn.Module):
                 sos_emb = self.td.model.transformer.wte( # NOTE: calculate the embedding for the Start-Of-Sequence token
                     torch.tensor(self.td.tokenizer.bos_token_id).to(self.device)
                 )
-            elif "qwen" in self.text_model: # Qwen tokenizer
-                # print(self.td.tokenizer)
-                # import sys
-                # sys.exit(0)
+            elif "qwen" in self.text_model.lower(): # Qwen tokenizer
                 sos_emb = self.td.model.model.embed_tokens( # NOTE: `print(model)`` to get the layer-wise architecture
                     torch.tensor(self.td.tokenizer.eos_token_id).to(self.device)
                 )
@@ -254,11 +255,12 @@ class Net(nn.Module):
                         tok_emb = self.td.model.transformer.wte(
                             torch.tensor(tokens).to(self.device)
                         )
-                    elif "qwen" in self.text_model:
+                    elif "qwen" in self.text_model.lower():
                         tok_emb = self.td.model.model.embed_tokens(
                             torch.tensor(tokens).to(self.device)
                         )
-
+                    else:
+                        raise ValueError(f"Unknown text model {self.text_model}")
                     emb = torch.cat([start_emb, tok_emb], dim=0)
                 else:
                     emb = start_emb
@@ -306,9 +308,10 @@ class Net(nn.Module):
         # embed all texts and con cat with map sos
         if "gpt" in self.text_model:
             text_emb = self.td.model.transformer.wte(x) # NOTE: word token embedding
-        elif "qwen" in self.text_model:
-            # print(self.td.model.model.device)
+        elif "qwen" in self.text_model.lower():
             text_emb = self.td.model.model.embed_tokens(x)
+        else:
+            raise ValueError(f"Unknown text model {self.text_model}")
 
         # N, len, embed_size
         x = torch.concat([img_mapped, text_emb], dim=1)
@@ -365,7 +368,7 @@ if __name__ == "__main__":
         N = 10
         if "gpt" in text:
             emb = m.td.model.config.n_embd
-        elif "qwen" in text:
+        elif "qwen" in text.lower():
             emb = m.td.model.config.hidden_size
         length = 20
 

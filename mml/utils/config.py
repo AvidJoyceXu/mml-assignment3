@@ -13,7 +13,7 @@ class ConfigQwen:
     """
 
     clip_model: str = "openai/clip-vit-base-patch32"
-    text_model: str = "qwen"
+    text_model: str = "Qwen/Qwen2.5-0.5B"
     seed: int = 100
     num_workers: int = 2
     train_size: int = 0.84

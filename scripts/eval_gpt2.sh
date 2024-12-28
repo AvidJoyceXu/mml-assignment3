@@ -1,0 +1,1 @@
+python mml/evaluate.py --checkpoint-name filtered_epoch_18.pt --img-path mml/data/coco/annotations/train2014

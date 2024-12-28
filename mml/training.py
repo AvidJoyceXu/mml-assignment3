@@ -30,21 +30,15 @@ parser.add_argument(
     type=str,
     default="S",
     help="Model size [S, L]",
-    choices=["S", "L", "s", "l"],
-)
-
-parser.add_argument(
-    "-N",
-    "--name",
-    type=str,
-    default="qwen",
-    help="Word tokenizer for captioning",
+    choices=["S", "L", "s", "l", "qwen"],
 )
 
 args = parser.parse_args()
 
-# config = ConfigL() if args.size.upper() == 'L' else ConfigS()
-config = ConfigQwen()
+config = ConfigL() if args.size.upper() == 'L' else ConfigS()
+if "qwen" in args.size:
+    print(f"Use {args.size} text decoder")
+    config = ConfigQwen()
 
 # set seed
 random.seed(config.seed)
@@ -75,7 +69,7 @@ if __name__ == "__main__":
         shuffle=True,
         num_workers=config.num_workers if is_cuda else 0,
         pin_memory=is_cuda,
-        name=args.name,
+        name=config.text_model,
     )
 
     valid_loader = get_loader(
@@ -84,7 +78,7 @@ if __name__ == "__main__":
         shuffle=False,
         num_workers=config.num_workers if is_cuda else 0,
         pin_memory=is_cuda,
-        name=args.name
+        name=config.text_model,
     )
 
     model = Net(
@@ -128,8 +122,8 @@ if __name__ == "__main__":
         # print("debug test_step")
         # trainer.test_step()
 
-        # debug
-        # trainer.save_ckp(os.path.join(config.weights_dir, f"epoch_{epoch + 1}.pt"))
+        # # debug
+        # trainer.save_ckp(os.path.join(config.weights_dir, f"debug_epoch_{epoch + 1}.pt"))
 
         trainer.train_epoch()
         trainer.valid_epoch()
